@@ -14,6 +14,7 @@ AI/ML / 传统ML · 市政占道工单逾期预测与许可复核排班
 | M4 | 超期概率 | 逻辑回归处理少数超期，冻结缩放，用独立留出桶保序校准并检查异常工况 | `src/permitdesk/deadline_classifier/classifier.py` `src/permitdesk/deadline_classifier/contracts.py` `src/permitdesk/deadline_classifier/service.py` | `tests/test_deadline_classifier.py` |
 | M5 | 审理编组 | 按应急和法定剩余时间排队，强制辖区、资质、班内时段及大占道双签审 | `src/permitdesk/review_roster/staffing.py` `src/permitdesk/review_roster/contracts.py` `src/permitdesk/review_roster/service.py` | `tests/test_review_roster.py` |
 | M6 | 许可追溯 | 工单回执事后计算分组 AP、Brier 和空桶，验证双签证据和依赖版本摘要 | `src/permitdesk/permit_journal/ledger.py` `src/permitdesk/permit_journal/contracts.py` `src/permitdesk/permit_journal/service.py` | `tests/test_permit_journal.py` |
+| M7 | 辖区归并 | 以台账、修订和结案回执交叉核对边界工单，裁决哪些归并先行生效、哪些工单留原辖区待核，并同步重算样本、队列及班内名额 | `src/permitdesk/district_merge/contracts.py` `src/permitdesk/district_merge/adjudication.py` `src/permitdesk/district_merge/service.py` `src/permitdesk/district_merge/publication.py` | `tests/test_district_merge.py` |
 
 ## 边界案例
 
@@ -30,3 +31,7 @@ AI/ML / 传统ML · 市政占道工单逾期预测与许可复核排班
 | TRAP-44 | 未校准置信度排先后 | 把分类分数当真实概率 | 区间保序校准和分布外拦截 | `src/permitdesk/deadline_classifier/classifier.py` | `tests/test_deadline_classifier.py::test_isotonic_calibration_pooling` |
 | TRAP-53 | 混长短工单改变概率 | 依赖当前推断批统计 | 冻结训练归一化 | `src/permitdesk/deadline_classifier/classifier.py` | `tests/test_deadline_classifier.py::test_inference_is_independent_of_batch` |
 | TRAP-54 | 模型或日历变化 | 沿用老签审凭证 | 依赖签名重新生成 | `src/permitdesk/permit_journal/ledger.py` | `tests/test_permit_journal.py::test_source_model_and_calendar_invalidate_receipt` |
+| TRAP-61 | 边界工单回执指向组外辖区 | 直接并入合并辖区 | 该工单留原辖区待核，不进合并队列 | `src/permitdesk/district_merge/adjudication.py` | `tests/test_district_merge.py::test_merge_takes_effect_but_holds_out_of_group_claim` |
+| TRAP-62 | 样本或班表不足即归并 | 只按工单数量合并 | 样本下限、日历与当值人员缺一即暂缓 | `src/permitdesk/district_merge/adjudication.py` | `tests/test_district_merge.py::test_merge_requires_sufficient_samples_and_reviewer` |
+| TRAP-63 | 归并重算中途失败 | 覆盖原归类后无法恢复 | 事务式发布，失败回滚并保留原版归类 | `src/permitdesk/district_merge/publication.py` | `tests/test_district_merge.py::test_publication_is_idempotent_and_rolls_back_on_failure` |
+| TRAP-64 | 同一批归并重跑 | 新增辖区或重复占位 | 规范化批次摘要作发布键 | `src/permitdesk/district_merge/contracts.py` | `tests/test_district_merge.py::test_batch_order_and_duplicate_do_not_change_digest` |

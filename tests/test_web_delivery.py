@@ -50,3 +50,26 @@ def test_large_request_returns_structured_error():
     response = application.test_client().post("/api/scenario", json={"capacity": "X" * 9000})
     assert response.status_code == 413
     assert response.get_json()["code"] == "REQUEST_TOO_LARGE"
+
+
+def test_merge_endpoint_publishes_and_reports():
+    client = application.test_client()
+    response = client.post("/api/merges", json={"capacity": 8, "merges": [["政西", "河口"]]})
+    assert response.status_code == 200
+    result = response.get_json()
+    assert len(result["run_id"]) == 12
+    assert result["merge"]["state"] == "已归并"
+    assert {row["district"] for row in result["rows"]} == {"政西·河口", "新坊"}
+    log = client.get("/api/merges").get_json()
+    assert log["journal"][0]["state"] == "已发布"
+
+
+def test_merge_endpoint_rejects_malformed_batches():
+    client = application.test_client()
+    for body in ({"capacity": True, "merges": [["政西", "河口"]]},
+                 {"capacity": 8, "merges": [["政西"]]},
+                 {"capacity": 8, "merges": [["政西", "河口"]], "extra": 1},
+                 {"merges": [["政西", "河口"]]}):
+        response = client.post("/api/merges", json=body)
+        assert response.status_code == 400
+        assert response.get_json()["code"] == "INVALID_MERGE"

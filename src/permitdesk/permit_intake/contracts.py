@@ -118,6 +118,9 @@ class PermitUpdate:
 class Intake:
     active: tuple[PermitUpdate,...]
     log: tuple[dict,...]
+    # Visible revision trail for active permits, used to detect a permit whose
+    # own revisions disagree about its district.  Never used to pick content.
+    revisions: tuple[dict,...] = ()
 
 def validate_dates(case: PermitUpdate):
     if case.opened>case.received or case.planned<case.opened:

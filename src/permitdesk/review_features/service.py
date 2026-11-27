@@ -1,8 +1,8 @@
 from .snapshot import historical_rows,predict_rows
 
-def build_features(permitted,outcomes,clock,config):
-    train=historical_rows(outcomes,config["split"],config["at"])
-    rows,missing=predict_rows(permitted,clock,config["road_classes"],config["required"],config["at"])
+def build_features(permitted,outcomes,clock,config,district_zones=None,zone_of=None):
+    train=historical_rows(outcomes,config["split"],config["at"],district_zones)
+    rows,missing=predict_rows(permitted,clock,config["road_classes"],config["required"],config["at"],zone_of)
     return train,rows,missing
 
 def feature_check(points,missing):

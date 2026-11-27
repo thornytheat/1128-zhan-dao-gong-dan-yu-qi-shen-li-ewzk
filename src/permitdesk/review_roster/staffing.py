@@ -16,7 +16,7 @@ def window(row,cursor,cost):
 def pending_order(case,clock,risk):
     return (not case.urgent,not clock.overdue,clock.remaining,-risk.probability,case.permit)
 
-def solve(permits,clocks,scores,missing,roster,limit,asof):
+def solve(permits,clocks,scores,missing,roster,limit,asof,permit_zones=None,reviewer_zones=None):
     if not 1<=limit<=100:
         raise ValueError("审理席位配额须在 1 至 100")
     people=tuple(Reviewer.parse(row) for row in roster)
@@ -24,19 +24,23 @@ def solve(permits,clocks,scores,missing,roster,limit,asof):
         raise ValueError("审理员重复列入班表")
     for member in people:
         validate_reviewer(member)
+    zones=permit_zones or {}
+    served=reviewer_zones or {}
     next_at={item.handle:asof for item in people}
     used=defaultdict(int)
     outcome=[]
     scheduled=0
     for case in sorted(permits,key=lambda item:pending_order(item,clocks[item.permit],scores[item.permit])):
         order=case.permit
+        zone=zones.get(order,case.district)
         if missing[order] and not case.urgent:
             outcome.append(hold(order,"通知补件","材料仍缺："+"、".join(missing[order])))
             continue
         if scheduled>=limit:
             outcome.append(hold(order,"保留待审","本截面席位配额已用完"))
             continue
-        options=[person for person in people if person.district==case.district and case.work in person.skills and
+        options=[person for person in people if zone in served.get(person.handle,(person.district,)) and
+                 case.work in person.skills and
                  (not case.urgent or person.allow_emergency) and used[person.handle]<person.stock]
         combinations=[]
         cost=20+case.lanes*5+min(20,case.obstruction//50)

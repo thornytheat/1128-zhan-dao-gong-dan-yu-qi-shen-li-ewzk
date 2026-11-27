@@ -3,30 +3,31 @@ from __future__ import annotations
 import argparse
 import json
 import re
-from hashlib import sha256
 from pathlib import Path
 from threading import Lock
 
 from flask import Flask, jsonify, render_template, request
 from werkzeug.exceptions import BadRequest, RequestEntityTooLarge, UnsupportedMediaType
 
-from .pipeline import run
+from .pipeline import publish_merges,run
+from .district_merge.contracts import MergePlanError
+from .district_merge.publication import PublicationError,PublicationLog
 
 MODULES = (('permit_intake', '许可流转'), ('calendar_intervals', '日历折算'), ('review_features', '审理特征'), ('deadline_classifier', '超期概率'), ('review_roster', '审理编组'), ('permit_journal', '许可追溯'))
+MERGE_KEYS = {'capacity', 'merges', 'policy'}
 application = Flask(__name__, static_folder="web/static", template_folder="web/templates")
 application.config["MAX_CONTENT_LENGTH"] = 8192
 application.json.sort_keys = False
-application.json.sort_keys = False
 _initial_snapshot = None
 _initial_lock = Lock()
+_journal = PublicationLog()
 
 
-def snapshot(capacity=None):
-    business_result = run(capacity)
+def snapshot(capacity=None, merges=None, policy=None, journal=None):
+    business_result = run(capacity) if merges is None else publish_merges(capacity, merges, policy, journal)[0]
     if len(business_result["stages"]) != len(MODULES):
         raise RuntimeError("运行证据缺少业务环节")
-    content = json.dumps(business_result, ensure_ascii=False, allow_nan=False, sort_keys=True)
-    return {**business_result, "run_id": sha256(content.encode()).hexdigest()[:12]}
+    return business_result
 
 
 def initial_snapshot():
@@ -70,6 +71,25 @@ def scenario():
     return jsonify(snapshot(capacity))
 
 
+@application.post("/api/merges")
+def merges_scenario():
+    try:
+        body = request.get_json()
+        if not isinstance(body, dict) or not body or not set(body) <= MERGE_KEYS:
+            raise ValueError("请提交 capacity、merges 及可选的 policy 字段")
+        capacity = parse_capacity(body.get("capacity"))
+        result, _report = publish_merges(capacity, body.get("merges"), body.get("policy"), _journal)
+    except (BadRequest, UnsupportedMediaType, MergePlanError, PublicationError, ValueError) as error:
+        return jsonify(code="INVALID_MERGE", message=str(error)), 400
+    return jsonify(result)
+
+
+@application.get("/api/merges")
+def merges_state():
+    """Return the publication log, including rolled-back attempts and originals."""
+    return jsonify(journal=_journal.records(), baseline=initial_snapshot()["run_id"])
+
+
 @application.get("/api/stages/<module>")
 def stage_evidence(module):
     positions = {slug: index for index, (slug, _) in enumerate(MODULES)}
@@ -93,6 +113,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     evaluate = commands.add_parser("evaluate", help="执行本地样例并输出业务证据")
     evaluate.add_argument("--capacity", type=int)
+    evaluate.add_argument("--merges", type=Path, help="辖区归并批次 JSON 文件")
     evaluate.add_argument("--output", type=Path)
     serve = commands.add_parser("serve", help="启动浏览服务")
     serve.add_argument("--port", type=int, default=8000)
@@ -106,7 +127,12 @@ def main():
         capacity = parse_capacity(args.capacity) if args.capacity is not None else None
     except ValueError as error:
         parser.error(str(error))
-    output = json.dumps(snapshot(capacity), ensure_ascii=False, indent=2, allow_nan=False)
+    merge_batch = json.loads(args.merges.read_text(encoding="utf-8")) if args.merges else None
+    try:
+        output = json.dumps(snapshot(capacity, merge_batch), ensure_ascii=False, indent=2, allow_nan=False)
+    except (MergePlanError, PublicationError) as error:
+        parser.error(str(error))
+        return
     if args.output:
         args.output.write_text(output + "\n", encoding="utf-8")
     else:

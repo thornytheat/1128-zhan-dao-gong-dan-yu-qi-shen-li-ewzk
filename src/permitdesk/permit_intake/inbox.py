@@ -19,6 +19,7 @@ def load_permits(updates, canonical, now):
         materials=tuple(sorted({item.strip() for item in row.files}))
         registered[row.permit].append(replace(row,road=canonical.get(key,key),files=materials))
     priority=[]
+    revisions=[]
     for permit, values in sorted(registered.items()):
         version=max(item.version for item in values)
         versions=[item for item in values if item.version==version]
@@ -33,9 +34,11 @@ def load_permits(updates, canonical, now):
         else:
             status="已受理"
             priority.append(head)
+        revisions.append({"permit":permit,"district":head.district,"version":version,
+                          "districts":sorted({row.district for row in values})})
         events.append({"permit":permit,"state":status,"version":version,"road":head.road})
     observations=sorted(events,key=lambda row:(row["permit"],row["state"],str(row)))
-    return Intake(tuple(priority),tuple(observations))
+    return Intake(tuple(priority),tuple(observations),tuple(revisions))
 
 def route_aliases(data):
     destinations={}

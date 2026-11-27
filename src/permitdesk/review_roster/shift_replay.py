@@ -78,10 +78,11 @@ def evidence_case(permit, clock, previous, replacement):
     }
 
 
-def summarize(cases):
+def summarize(cases, zone_of=None):
+    zones = zone_of or {}
     districts = defaultdict(list)
     for row in cases:
-        districts[row['district']].append(row)
+        districts[zones.get(row['permit'], row['district'])].append(row)
     rollup = []
     for district, rows in sorted(districts.items()):
         changes = Counter(row['movement'] for row in rows)
@@ -98,15 +99,17 @@ def summarize(cases):
     return rollup
 
 
-def shift_impact(cases, clocks, predictions, documents, roster, capacity, snapshot, baseline, absences):
+def shift_impact(cases, clocks, predictions, documents, roster, capacity, snapshot, baseline, absences,
+                 zone_of=None, reviewer_zones=None):
     current = {row.permit: row for row in baseline}
     active = {row.permit: row for row in cases}
     if len(current) != len(baseline) or set(current) != set(active):
         raise ValueError('原有班表未逐一覆盖有效工单')
     changed = scenario_roster(roster, absences)
-    alternative = solve(cases, clocks, predictions, documents, changed, capacity, snapshot)
+    alternative = solve(cases, clocks, predictions, documents, changed, capacity, snapshot,
+                        permit_zones=zone_of, reviewer_zones=reviewer_zones)
     evidence = [evidence_case(active[row.permit], clocks[row.permit], current[row.permit], row) for row in alternative]
-    totals = summarize(evidence)
+    totals = summarize(evidence, zone_of)
     normalized_absences = {handle: list(span) for handle, span in sorted(absences.items())}
     receipt = {'record': '缺班影响复核', 'snapshot': snapshot, 'absence_minutes': normalized_absences,
                'capacity': capacity, 'districts': totals, 'changes': sum(row['movement'] != '原安排' for row in evidence)}
